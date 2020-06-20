@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"net/http"
 	"os"
 	"path"
 	"strings"
@@ -26,10 +27,17 @@ func main() {
 	var (
 		minioUrl string
 		redisUrl string
+		debug    bool
 	)
+	flag.BoolVar(&debug, "debug", false, "debug")
 	flag.StringVar(&minioUrl, "minio", "", "minio url, eg: http://localhost:9000/bucketName")
 	flag.StringVar(&redisUrl, "redis", "", "redis url, eg: tcp://localhost:6379/1/listKey")
 	flag.Parse()
+	if debug {
+		log.SetLevel(log.DebugLevel)
+	} else {
+		log.SetLevel(log.InfoLevel)
+	}
 	if redisUrl == "" {
 		log.Fatal("redis Url can not be empty")
 	}
@@ -75,15 +83,27 @@ func main() {
 			log.Errorln("invalid line:>", line)
 			continue
 		}
-		log.Infoln("Downloading:>", ss[0], " ...")
+		var contentType = "application/octet-stream"
+		if resp, e := http.Head(ss[0]); nil != e {
+			log.Errorln("Get HEAD failed:>", ss[0], e)
+			continue
+		} else {
+			//log.Infoln("Source Header:>", resp.Header)
+			if info, e := s3Client.StatObject(optm.Bucket, ss[1], minio.StatObjectOptions{}); nil == e && info.Size == resp.ContentLength {
+				log.Infof("Object '%s' exists and match size (%d). Skipped.\n", path.Join(optm.Bucket, ss[1]), info.Size)
+				continue
+			}
+			if s := resp.Header.Get("Content-Type"); s != "" {
+				contentType = s
+			}
+		}
+		log.Infoln("Downloading:>", ss[0], contentType, " ...")
 		if resp, e := grab.Get(".", ss[0]); nil != e {
 			log.Errorln("Download failed:>", ss[0], e)
 		} else {
 			log.Infoln("Downloaded:>", resp.Filename)
-			if info, e := s3Client.StatObject(optm.Bucket, ss[1], minio.StatObjectOptions{}); nil == e && info.Size == resp.Size {
-				log.Infoln("Target object exists and match size. Skipped.")
-			} else if n, e := s3Client.FPutObject(optm.Bucket, ss[1], resp.Filename, minio.PutObjectOptions{
-				ContentType: "application/octet-stream",
+			if n, e := s3Client.FPutObject(optm.Bucket, ss[1], resp.Filename, minio.PutObjectOptions{
+				ContentType: contentType,
 			}); nil != e {
 				log.Errorln("upload to minio failed:>", ss[1], e)
 				log.Println(">>", line, "<<")
