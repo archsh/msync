@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/url"
 	"strings"
 )
@@ -9,6 +10,7 @@ type MinioOption struct {
 	Endpoint string
 	Access   string
 	Secret   string
+	Bucket   string
 	Secure   bool
 }
 
@@ -19,6 +21,12 @@ func ParseMinioURL(s string) (*MinioOption, error) {
 	} else {
 		if strings.ToLower(u.Scheme) == "https" {
 			opt.Secure = true
+		}
+		sss := strings.Split(strings.TrimLeft(u.Path, "/"), "/")
+		if len(sss) < 1 {
+			return nil, fmt.Errorf("bucket should specified")
+		} else {
+			opt.Bucket = sss[0]
 		}
 		opt.Endpoint = u.Host
 		opt.Access = u.User.Username()
