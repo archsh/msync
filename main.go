@@ -88,13 +88,16 @@ func main() {
 			log.Errorln("Get HEAD failed:>", ss[0], e)
 			continue
 		} else {
-			//log.Infoln("Source Header:>", resp.Header)
-			if info, e := s3Client.StatObject(optm.Bucket, ss[1], minio.StatObjectOptions{}); nil == e && info.Size == resp.ContentLength {
-				log.Infof("Object '%s' exists and match size (%d). Skipped.\n", path.Join(optm.Bucket, ss[1]), info.Size)
-				continue
-			}
 			if s := resp.Header.Get("Content-Type"); s != "" {
 				contentType = s
+			}
+			if info, e := s3Client.StatObject(optm.Bucket, ss[1], minio.StatObjectOptions{});
+				nil == e && info.Size == resp.ContentLength {
+				log.Infof("Object '%s' exists and match size (%d). Skipped.\n", path.Join(optm.Bucket, ss[1]), info.Size)
+				if info.ContentType != contentType {
+					
+				}
+				continue
 			}
 		}
 		log.Infoln("Downloading:>", ss[0], contentType, " ...")
