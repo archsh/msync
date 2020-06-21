@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/go-redis/redis"
@@ -28,8 +29,10 @@ func main() {
 		minioUrl string
 		redisUrl string
 		debug    bool
+		serve    bool
 	)
 	flag.BoolVar(&debug, "debug", false, "debug")
+	flag.BoolVar(&serve, "serve", false, "serve as a server")
 	flag.StringVar(&minioUrl, "minio", "", "minio url, eg: http://localhost:9000/bucketName")
 	flag.StringVar(&redisUrl, "redis", "", "redis url, eg: tcp://localhost:6379/1/listKey")
 	flag.Parse()
@@ -66,8 +69,14 @@ func main() {
 	for {
 		llen := redisClient.LLen(opts.Key).Val()
 		if llen < 1 {
-			log.Infoln("End of redis list reached. Done.")
-			return
+			if serve {
+				log.Infoln("No more lines in redis list, wait for a while ...")
+				time.Sleep(time.Second * 3)
+				continue
+			} else {
+				log.Infoln("End of redis list reached. Done.")
+				return
+			}
 		}
 		line, e := redisClient.LPop(opts.Key).Result()
 		if nil != e {
@@ -95,7 +104,7 @@ func main() {
 				nil == e && info.Size == resp.ContentLength {
 				log.Infof("Object '%s' exists and match size (%d). Skipped.\n", path.Join(optm.Bucket, ss[1]), info.Size)
 				if info.ContentType != contentType {
-					
+
 				}
 				continue
 			}
