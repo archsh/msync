@@ -112,6 +112,10 @@ func main() {
 		log.Infoln("Downloading:>", ss[0], contentType, " ...")
 		if resp, e := grab.Get(".", ss[0]); nil != e {
 			log.Errorln("Download failed:>", ss[0], e)
+			redisClient.LPush(opts.Key+"_FAILED", line)
+			if e := os.Remove(resp.Filename); nil != e {
+				log.Errorln("Delete file failed:", resp.Filename, e)
+			}
 		} else {
 			log.Infoln("Downloaded:>", resp.Filename)
 			if n, e := s3Client.FPutObject(optm.Bucket, ss[1], resp.Filename, minio.PutObjectOptions{
@@ -119,6 +123,7 @@ func main() {
 			}); nil != e {
 				log.Errorln("upload to minio failed:>", ss[1], e)
 				log.Println(">>", line, "<<")
+				redisClient.LPush(opts.Key+"_FAILED", line)
 			} else {
 				log.Infoln("Uploaded:>", resp.Filename, " to ", path.Join(optm.Bucket, ss[1]), " >>", n, " bytes.")
 			}
