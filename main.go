@@ -1,9 +1,9 @@
 package main
 
 import (
+	"context"
 	"flag"
-	"net/http"
-	"os"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"path"
 	"strings"
 	"time"
@@ -11,9 +11,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/go-redis/redis"
 
-	"github.com/minio/minio-go/v6"
-
-	"github.com/cavaliercoder/grab"
+	"github.com/minio/minio-go/v7"
 )
 
 func main() {
@@ -44,9 +42,6 @@ func main() {
 	if redisUrl == "" {
 		log.Fatal("redis Url can not be empty")
 	}
-	if redisUrl == "" {
-		log.Fatal("minio Url can not be empty")
-	}
 	opts, e := ParseRedisURL(redisUrl)
 	if nil != e {
 		log.Fatalln(e)
@@ -57,11 +52,16 @@ func main() {
 	if nil != e {
 		log.Fatalln(e)
 	}
-	s3Client, err := minio.New(optm.Endpoint, optm.Access, optm.Secret, optm.Secure)
+
+	s3Client, err := minio.New(optm.Endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(optm.Access, optm.Secret, ""),
+		Secure: optm.Secure,
+	})
 	if err != nil {
 		log.Fatalln(err)
 	}
-	if b, e := s3Client.BucketExists(optm.Bucket); nil != e {
+	ctx := context.Background()
+	if b, e := s3Client.BucketExists(ctx, optm.Bucket); nil != e {
 		log.Fatalln("Check BucketExists failed:>", e)
 	} else if !b {
 		log.Fatalln("Bucket does not exists!", optm.Bucket)
@@ -92,44 +92,27 @@ func main() {
 			log.Errorln("invalid line:>", line)
 			continue
 		}
+		orig, dst := ss[0], ss[1]
 		var contentType = "application/octet-stream"
-		if resp, e := http.Head(ss[0]); nil != e {
-			log.Errorln("Get HEAD failed:>", ss[0], e)
-			continue
-		} else {
-			if s := resp.Header.Get("Content-Type"); s != "" {
-				contentType = s
-			}
-			if info, e := s3Client.StatObject(optm.Bucket, ss[1], minio.StatObjectOptions{});
-				nil == e && info.Size == resp.ContentLength {
-				log.Infof("Object '%s' exists and match size (%d). Skipped.\n", path.Join(optm.Bucket, ss[1]), info.Size)
-				if info.ContentType != contentType {
-
-				}
-				continue
-			}
-		}
-		log.Infoln("Downloading:>", ss[0], contentType, " ...")
-		if resp, e := grab.Get(".", ss[0]); nil != e {
-			log.Errorln("Download failed:>", ss[0], e)
+		if size, e := FileSize(orig); nil != e {
+			log.Errorln("Get FileSize failed:", orig, e)
 			redisClient.LPush(opts.Key+"_FAILED", line)
-			if e := os.Remove(resp.Filename); nil != e {
-				log.Errorln("Delete file failed:", resp.Filename, e)
+		} else if info, e := s3Client.StatObject(ctx, optm.Bucket, dst, minio.StatObjectOptions{}); nil == e && info.Size == size {
+			log.Infof("Object '%s' exists and match size (%d). Skipped.\n", path.Join(optm.Bucket, dst), info.Size)
+			if info.ContentType != contentType {
+
 			}
+			continue
+		} else if src, e := FetchFile(orig); nil != e {
+			log.Errorln("Fetch original file failed:", src, e)
+			redisClient.LPush(opts.Key+"_FAILED", line)
+		} else if n, e := s3Client.FPutObject(ctx, optm.Bucket, dst, src, minio.PutObjectOptions{
+			ContentType: contentType,
+		}); nil != e {
+			log.Errorln("FPutObject failed:", src, dst, e)
+			redisClient.LPush(opts.Key+"_FAILED", line)
 		} else {
-			log.Infoln("Downloaded:>", resp.Filename)
-			if n, e := s3Client.FPutObject(optm.Bucket, ss[1], resp.Filename, minio.PutObjectOptions{
-				ContentType: contentType,
-			}); nil != e {
-				log.Errorln("upload to minio failed:>", ss[1], e)
-				log.Println(">>", line, "<<")
-				redisClient.LPush(opts.Key+"_FAILED", line)
-			} else {
-				log.Infoln("Uploaded:>", resp.Filename, " to ", path.Join(optm.Bucket, ss[1]), " >>", n, " bytes.")
-			}
-			if e := os.Remove(resp.Filename); nil != e {
-				log.Errorln("Delete file failed:", resp.Filename, e)
-			}
+			log.Infoln("Uploaded:>", orig, " to ", path.Join(n.Bucket, n.Key), " >>", n.Size, " bytes.")
 		}
 	}
 }
