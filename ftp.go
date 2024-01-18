@@ -1,8 +1,8 @@
 package main
 
 import (
-	log "github.com/Sirupsen/logrus"
 	"github.com/jlaffaye/ftp"
+	log "github.com/sirupsen/logrus"
 	"io"
 	"net/url"
 	"os"

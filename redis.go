@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	//log "github.com/Sirupsen/logrus"
+	//log "github.com/sirupsen/logrus"
 	"github.com/go-redis/redis"
 )
 
@@ -25,7 +25,7 @@ func ParseRedisURL(s string) (*RedisOption, error) {
 		opts.DB = 1
 		var sss = strings.Split(strings.TrimLeft(u.Path, "/"), "/")
 		if len(sss) < 2 {
-			return nil,fmt.Errorf("DB and key name should provided, eg: /1/KEY ")
+			return nil, fmt.Errorf("DB and key name should provided, eg: /1/KEY ")
 		} else {
 			if n, e := strconv.Atoi(sss[0]); nil != e {
 				return nil, e //log.Fatalln(e)
